@@ -21,13 +21,13 @@ use tui::{
 };
 
 #[derive(Debug)]
-struct StatefulList<T> {
+struct StatefulList<'a, T> {
     state: ListState,
-    items: Vec<T>,
+    items: & 'a Vec<T>,
 }
 
-impl<T> StatefulList<T> {
-    fn with_items(items: Vec<T>) -> StatefulList<T> {
+impl<'a, T> StatefulList<'a, T> {
+    fn with_items(items:& Vec<T>) -> StatefulList<T> {
         StatefulList {
             state: ListState::default(),
             items,
@@ -69,15 +69,15 @@ impl<T> StatefulList<T> {
 
 #[derive(Debug)]
 struct App<'a> {
-    items: StatefulList<(&'a str, &'a str, usize)>,
+    items: StatefulList<'a, (&'a str, &'a str, usize)>,
 }
 
 impl<'a> App <'a> {
-    fn new(items: Vec<(&'a str,&'a str, usize)>) -> App<'a> {
-        App {
-            items: StatefulList::with_items(items)
-        }
-    }
+    fn new<'b>(items: & 'b Vec<(&str,&str, usize)>) -> App<'b> {
+			App {
+				items: StatefulList::with_items(items)
+			}
+		}
 }
 
 fn main() {
@@ -87,33 +87,34 @@ fn main() {
     let f = File::open("custom.json").unwrap();
     let v: serde_json::Value = serde_json::from_reader(f).unwrap();
     
-    let change_type = &v["ChangeType"];
-    let mut array: Vec<(&str, &str, usize)> = vec![];
-    // println!("{:?}", ChangeType);
-    let mut index = 0;
-    change_type.as_array().unwrap().iter().for_each(|o| {
-        // println!("{:?}", o);
-        let mut temp: (&str, &str, usize) = ("", "", 0);
-        o.as_object().unwrap().iter().for_each(|(key, value)|{
-            // println!("{}: {}", key, value);
-            if key == "name" {
-                temp.0 = value.as_str().unwrap();
-                temp.2 = index;
-                index += 1;
-            } else {
-                temp.1 = value.as_str().unwrap();
-            }
-        });
-        &array.push(temp);
-    });
+    // let change_type = &v["ChangeType"];
+    // let mut array: Vec<(&str, &str, usize)> = vec![];
+    // // println!("{:?}", ChangeType);
+    // let mut index = 0;
+    // change_type.as_array().unwrap().iter().for_each(|o| {
+    //     // println!("{:?}", o);
+    //     let mut temp: (&str, &str, usize) = ("", "", 0);
+    //     o.as_object().unwrap().iter().for_each(|(key, value)|{
+    //         // println!("{}: {}", key, value);
+    //         if key == "name" {
+    //             temp.0 = value.as_str().unwrap();
+    //             temp.2 = index;
+    //             index += 1;
+    //         } else {
+    //             temp.1 = value.as_str().unwrap();
+    //         }
+    //     });
+    //     &array.push(temp);
+    // });
     // println!("{:?}", array);
     let mut CommitMap = &v["messages"];
+    let mut array = vec![("feat", "feat", 1)];
 
     for (key, value) in CommitMap.as_object().unwrap() {
         println!("{}: {}", key, value);
         let mut input = String::new();
         if(key == "ChangeType") {
-            input = open_terminal(array.clone()).unwrap().to_string();
+            input = open_terminal(&array).unwrap().to_string();
             input = array[input.parse::<usize>().unwrap()].1.to_string();
         } else {
             io::stdin().read_line(&mut input).unwrap();
@@ -124,7 +125,7 @@ fn main() {
     println!("{:?}", temp);
 }
 
-fn open_terminal(array: Vec<(&str, &str, usize)>) -> Result<usize, Box<dyn Error>> {
+fn open_terminal(array: & Vec<(&str, &str, usize)>) -> Result<usize, Box<dyn Error>> {
     // enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -159,7 +160,7 @@ fn open_terminal(array: Vec<(&str, &str, usize)>) -> Result<usize, Box<dyn Error
     // ];
      // create app and run it
     let tick_rate = Duration::from_millis(250);
-    let mut app = App::new(array.clone());
+    let mut app = App::new(array);
     let res = run_app(&mut terminal, app, tick_rate);
     // restore terminal
     disable_raw_mode()?;
