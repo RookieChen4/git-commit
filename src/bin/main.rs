@@ -1,21 +1,22 @@
 use std::io;
 use std::fs::File;
-use std::collections::HashMap;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::{
     error::Error,
     time::{Duration, Instant},
+    process::Command
 };
+
 use tui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Corner, Direction, Layout},
+    layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Span, Spans},
+    text::{Spans},
     widgets::{Block, Borders, List, ListItem, ListState},
     Frame, Terminal,
 };
@@ -81,48 +82,67 @@ impl<'a> App <'a> {
 }
 
 fn main() {
-
-    // read the file
-    let mut temp: Vec<String> = vec![];
+    // 存放输入
+    let mut command_line: Vec<String> = vec![];
+    // read the json file
     let f = File::open("custom.json").unwrap();
     let v: serde_json::Value = serde_json::from_reader(f).unwrap();
     
-    // let change_type = &v["ChangeType"];
-    // let mut array: Vec<(&str, &str, usize)> = vec![];
-    // // println!("{:?}", ChangeType);
-    // let mut index = 0;
-    // change_type.as_array().unwrap().iter().for_each(|o| {
-    //     // println!("{:?}", o);
-    //     let mut temp: (&str, &str, usize) = ("", "", 0);
-    //     o.as_object().unwrap().iter().for_each(|(key, value)|{
-    //         // println!("{}: {}", key, value);
-    //         if key == "name" {
-    //             temp.0 = value.as_str().unwrap();
-    //             temp.2 = index;
-    //             index += 1;
-    //         } else {
-    //             temp.1 = value.as_str().unwrap();
-    //         }
-    //     });
-    //     &array.push(temp);
-    // });
-    // println!("{:?}", array);
-    let mut CommitMap = &v["messages"];
-    let mut array = vec![("feat", "feat", 1)];
+    // 将json转成数组
+    let change_type = &v["ChangeType"];
+    let mut array: Vec<(&str, &str, usize)> = vec![];
+    let mut index = 0;
+    change_type.as_array().unwrap().iter().for_each(|o| {
+        let mut temp: (&str, &str, usize) = ("", "", 0);
+        o.as_object().unwrap().iter().for_each(|(key, value)|{
+            if key == "name" {
+                temp.0 = value.as_str().unwrap();
+                temp.2 = index;
+                index += 1;
+            } else {
+                temp.1 = value.as_str().unwrap();
+            }
+        });
+        let _ = &array.push(temp);
+    });
 
-    for (key, value) in CommitMap.as_object().unwrap() {
+    let commit_map = &v["messages"];
+
+    // 将json转成数组
+    let mut command_map = vec![];
+    commit_map.as_array().unwrap().iter().for_each(|message_object| {
+        let mut type_key = "";
+        let mut placeholder = "";
+        message_object.as_object().unwrap().iter().for_each(|(key, value)| {
+            if key == "type" {
+                type_key = value.as_str().unwrap();
+            }
+            if key == "placeholder" {
+                placeholder = value.as_str().unwrap();
+            }
+        });
+        command_map.push((type_key, placeholder));
+    });
+
+    // 执行命令
+    for (key, value) in command_map {
         println!("{}: {}", key, value);
         let mut input = String::new();
-        if(key == "ChangeType") {
+        if key == "ChangeType" {
             input = open_terminal(&array).unwrap().to_string();
             input = array[input.parse::<usize>().unwrap()].1.to_string();
         } else {
             io::stdin().read_line(&mut input).unwrap();
         }
-        temp.push(input.trim().to_string());
+        command_line.push(input.trim().to_string());
     }
 
-    println!("{:?}", temp);
+    println!("{:?}", command_line);
+    let command = command_line.join(" ");
+    Command::new("git")
+        .args(["commit", "-m", &command])
+        .output()
+        .expect("failed to execute process");
 }
 
 fn open_terminal(array: & Vec<(&str, &str, usize)>) -> Result<usize, Box<dyn Error>> {
@@ -131,36 +151,9 @@ fn open_terminal(array: & Vec<(&str, &str, usize)>) -> Result<usize, Box<dyn Err
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    // let array = vec![
-    //     ("Item0", 1),
-    //     ("Item1", 2),
-    //     ("Item2", 1),
-    //     ("Item3", 3),
-    //     ("Item4", 1),
-    //     ("Item5", 4),
-    //     ("Item6", 1),
-    //     ("Item7", 3),
-    //     ("Item8", 1),
-    //     ("Item9", 6),
-    //     ("Item10", 1),
-    //     ("Item11", 3),
-    //     ("Item12", 1),
-    //     ("Item13", 2),
-    //     ("Item14", 1),
-    //     ("Item15", 1),
-    //     ("Item16", 4),
-    //     ("Item17", 1),
-    //     ("Item18", 5),
-    //     ("Item19", 4),
-    //     ("Item20", 1),
-    //     ("Item21", 2),
-    //     ("Item22", 1),
-    //     ("Item23", 3),
-    //     ("Item24", 1),
-    // ];
      // create app and run it
     let tick_rate = Duration::from_millis(250);
-    let mut app = App::new(array);
+    let app = App::new(array);
     let res = run_app(&mut terminal, app, tick_rate);
     // restore terminal
     disable_raw_mode()?;
@@ -221,7 +214,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: &mut App) {
         .items
         .iter()
         .map(|i| {
-            let mut lines = vec![Spans::from(i.0)];
+            let lines = vec![Spans::from(i.0)];
             // for _ in 0..i.2 {
             //     lines.push(Spans::from(Span::styled(
             //         "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
