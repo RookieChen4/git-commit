@@ -60,6 +60,8 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "tui",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]
