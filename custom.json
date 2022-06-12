@@ -11,16 +11,16 @@
     {"value": "revert",   "name": "revert:   Revert to a commit"},
     {"value": "WIP",      "name": "WIP:      Work in progress"}
   ],
-  "scopes": [
+  "Scopes": [
     {"value": "accounts", "name": "描述"},
     {"value": "admin", "name": "描述"},
     {"value": "exampleScope", "name": "描述"},
     {"value": "changeMe", "name": "描述"}
   ],
   "messages": [
-    {"index": 1, "type": "Missionid", "placeholder": "请输入任务ID"},
+    {"index": 1, "type": "MissionId", "placeholder": "请输入任务ID"},
     {"index": 2, "type": "ChangeType", "placeholder": "请选择变更类型"},
-    {"index": 3, "type": "Scope", "placeholder": "请输入变更范围"},
+    {"index": 3, "type": "Scopes", "placeholder": "请输入变更范围"},
     {"index": 4, "type": "Subject", "placeholder": "请入变更概述"}
   ]
 }

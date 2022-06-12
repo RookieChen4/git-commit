@@ -3,7 +3,9 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::{error::Error, io, cell::RefCell, process::Command};
+use std::{error::Error, io, process::Command, fs::File, collections::HashMap};
+use core::fmt::{Debug};
+
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Constraint, Direction, Layout},
@@ -20,12 +22,12 @@ enum InputMode {
 }
 
 #[derive(Debug)]
-struct StatefulList<'a, T> {
+struct StatefulList<'a, T:Debug> {
     state: ListState,
     items: & 'a Vec<T>,
 }
 
-impl<'a, T> StatefulList<'a, T> {
+impl<'a, T:Debug> StatefulList<'a, T> {
     // 初始化
     fn with_items(items:& Vec<T>) -> StatefulList<T> {
         StatefulList {
@@ -79,27 +81,32 @@ struct App<'a> {
     input_mode: InputMode,
     /// History of recorded messages
     messages: Vec<String>,
-    state_ful_list: StatefulList<'a, & 'a str>,
+    state_ful_list: StatefulList<'a, (String,String)>,
+    command_map: Vec<(String, String)>,
+    select_map: & 'a HashMap<String, Vec<(String, String)>>
 }
 
 impl <'a> App <'a> {
-    fn new(items: & 'a Vec<&str>) -> App<'a> {
+    fn new(items: & 'a Vec<(String, String)>, command_map: Vec<(String, String)>, select_map: & 'a HashMap<String, Vec<(String, String)>>) -> App<'a> {
         App {
             input: String::new(),
             input_mode: InputMode::Type,
             messages: Vec::new(),
             state_ful_list: StatefulList::with_items(items),
+            command_map,
+            select_map,
         }
     }
-}
-
-impl App <'_> {
-    fn set_mode(& mut self, mode: InputMode) {
+    fn set_mode(& mut self, mode: InputMode, key: & String) {
+        match mode {
+            InputMode::Select => self.state_ful_list = StatefulList::with_items(self.select_map.get(key).unwrap()),
+            _ => {}
+        }
         self.input_mode = mode;
     }
 }
 
-const command: [&str;3] = ["请输入任务ID", "请选择变更类型", "请输入变更范围"];
+const COMMAND_KEY: &str = "messages";
 
 fn main() -> Result<(), Box<dyn Error>> {
     // setup terminal
@@ -109,9 +116,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+
     // create app and run it
-    let items = vec!["feat:     A new feature", "fix:      A bug fix", "test:     Adding missing tests"];
-    let app = App::new(&items);
+    let items = vec![("feat:     A new feature".to_string(), "feat".to_string()),("feat:     A new feature".to_string(), "feat".to_string()), ("feat:     A new feature".to_string(), "feat".to_string())];
+    let (command_map, select_map) = read_json_file()?;
+    let app = App::new(&items, command_map, &select_map);
     let res = run_app(&mut terminal, app);
 
     // restore terminal
@@ -127,15 +136,53 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{:?}", err)
     }
 
-    let output = Command::new("git").args(["log", "-n2"]).output().expect("failed to execute process");
-
     Ok(())
+}
+
+fn read_json_file() -> Result<(Vec<(String, String)>, HashMap<String, Vec<(String, String)>>), Box<dyn Error>> {
+    let f = File::open("custom.json")?;
+    let v: serde_json::Value = serde_json::from_reader(f)?;
+
+    let command_map = &v[COMMAND_KEY];
+    // 将json中的messages转成数组
+    let command_map = command_map.as_array().unwrap().iter().map(|o| {
+        o.as_object().unwrap().iter().map(|(_, value)| {
+            value.as_str()
+        }).filter(|t|{ if let Some(_) = t { true } else { false } }).collect::<Vec<_>>()
+    }).map(|o| { (o[0].unwrap().to_string(), o[1].unwrap().to_string())}).collect::<Vec<_>>();
+
+    let mut select_map = HashMap::new();
+
+    // TODO: 待优化
+    for (_, key) in &command_map {
+        let select_value = &v[key];
+        match select_value {
+            serde_json::Value::Null => {},
+            _ => {
+                let mut array: Vec<(String, String)> = vec![];
+                let mut index = 0;
+                select_value.as_array().unwrap().iter().for_each(|o| {
+                    let mut temp: (String,String) = ("".to_string(), "".to_string());
+                    o.as_object().unwrap().iter().for_each(|(key, value)|{
+                        if key == "name" {
+                            temp.0 = value.as_str().unwrap().to_string();
+                            index += 1;
+                        } else {
+                            temp.1 = value.as_str().unwrap().to_string();
+                        }
+                    });
+                    let _ = &array.push(temp);
+                });
+                select_map.insert(key.clone(), array);
+            }
+        }
+    }
+
+    Ok((command_map, select_map))
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<()> {
     loop {
-        let text = command[app.messages.len()];
-        if text == "请选择变更类型" { app.set_mode(InputMode::Select) } else { app.set_mode(InputMode::Type) }
         terminal.draw(|f| ui(f, & mut app))?;
         if let Event::Key(key) = event::read()? {
             match app.input_mode {
@@ -149,7 +196,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
                     }
                     KeyCode::Enter => {
                         app.messages.push(app.input.drain(..).collect());
-                        if app.messages.len() >= command.len() { return Ok(()) }
+                        if app.messages.len() >= app.command_map.len() { return Ok(()) }
+                        let key = &app.command_map[app.messages.len()].1.clone();
+                        if  app.select_map.contains_key(key) {
+                            app.set_mode(InputMode::Select, key) 
+                        } else { 
+                            app.set_mode(InputMode::Type, key) 
+                        }
                     },
                     _ => {}
                 },
@@ -160,7 +213,14 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
                     KeyCode::Up => app.state_ful_list.previous(),
                     KeyCode::Enter => {
                         let index = app.state_ful_list.state.selected().unwrap_or_else(|| usize::MAX);
-                        if index != usize::MAX { app.messages.push(app.state_ful_list.items[index].into()); }
+                        if index != usize::MAX { app.messages.push(app.state_ful_list.items[index].1.clone()); }
+                        if app.messages.len() >= app.command_map.len() { return Ok(()) }
+                        let key = &app.command_map[app.messages.len()].1.clone();
+                        if  app.select_map.contains_key(key) {
+                            app.set_mode(InputMode::Select, key) 
+                        } else { 
+                            app.set_mode(InputMode::Type, key) 
+                        }
                     },
                     _ => {}
                 }
@@ -196,7 +256,7 @@ fn render_left_area<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: 
 
 
 fn render_input<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: &App) {
-    let text = command[app.messages.len()];
+    let text = &app.command_map[app.messages.len()].0[..];
     let chunk = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Length(3), Constraint::Min(1)].as_ref())
@@ -234,7 +294,7 @@ fn render_input<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: &App
 
 fn render_select<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: & mut App) {
     let items: Vec<ListItem> = app.state_ful_list.items.iter().map(|i| {
-        let content = Spans::from(Span::raw(format!("{}", i)));
+        let content = Spans::from(Span::raw(format!("{}", i.0)));
         ListItem::new(content).style(Style::default().fg(Color::Black).bg(Color::White))
     }).collect();
 
@@ -262,9 +322,11 @@ fn render_right_area<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app:
     let stdout  = String::from_utf8(output.stdout);
     let stdout  = stdout.unwrap_or_default();
     let stdout  = stdout.split('\n').collect::<Vec<&str>>();
-    let stdout: Vec<ListItem> = stdout.iter().map(|i| {
-        let content = Spans::from(Span::raw(format!("  {}", i)));
-        ListItem::new(content).style(Style::default())
+    let stdout: Vec<ListItem> = stdout.iter().enumerate().map(|(i, m)| {
+        let content = Spans::from(Span::raw(format!("  {}", m)));
+        ListItem::new(content).style(
+            if i % 6 == 0 { Style::default().fg(Color::Rgb(193, 156, 0)) } else {Style::default()}
+        )
     }).collect();
 
     let stdout = List::new(stdout);
