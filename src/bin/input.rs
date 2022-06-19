@@ -19,6 +19,7 @@ use unicode_width::UnicodeWidthStr;
 enum InputMode {
     Type,
     Select,
+    Confirm,
 }
 
 #[derive(Debug)]
@@ -98,11 +99,23 @@ impl <'a> App <'a> {
         }
     }
     fn set_mode(& mut self, mode: InputMode, key: & String) {
+        if key == "" {
+            self.input_mode = mode;
+            return;
+        }
         match mode {
             InputMode::Select => self.state_ful_list = StatefulList::with_items(self.select_map.get(key).unwrap()),
             _ => {}
         }
         self.input_mode = mode;
+    }
+
+    fn commit(& mut self) {
+        let command = self.messages.join(" ");
+        Command::new("git")
+            .args(["commit", "-m", &command])
+            .output()
+            .expect("failed to execute process");
     }
 }
 
@@ -196,7 +209,10 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
                     }
                     KeyCode::Enter => {
                         app.messages.push(app.input.drain(..).collect());
-                        if app.messages.len() >= app.command_map.len() { return Ok(()) }
+                        if app.messages.len() >= app.command_map.len() {
+                            app.set_mode(InputMode::Confirm, &"".to_string());
+                            continue
+                        }
                         let key = &app.command_map[app.messages.len()].1.clone();
                         if  app.select_map.contains_key(key) {
                             app.set_mode(InputMode::Select, key) 
@@ -214,13 +230,24 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut app: App) -> io::Result<(
                     KeyCode::Enter => {
                         let index = app.state_ful_list.state.selected().unwrap_or_else(|| usize::MAX);
                         if index != usize::MAX { app.messages.push(app.state_ful_list.items[index].1.clone()); }
-                        if app.messages.len() >= app.command_map.len() { return Ok(()) }
+                        if app.messages.len() >= app.command_map.len() { 
+                            app.set_mode(InputMode::Confirm, &"".to_string());
+                            continue
+                        }
                         let key = &app.command_map[app.messages.len()].1.clone();
                         if  app.select_map.contains_key(key) {
                             app.set_mode(InputMode::Select, key) 
                         } else { 
                             app.set_mode(InputMode::Type, key) 
                         }
+                    },
+                    _ => {}
+                },
+                _ => match key.code {
+                    KeyCode::Esc => return Ok(()),
+                    KeyCode::Enter => {
+                        app.commit();
+                        return Ok(())
                     },
                     _ => {}
                 }
@@ -250,7 +277,8 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: & mut App) {
 fn render_left_area<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: & mut App) {
     match app.input_mode {
         InputMode::Select => render_select(f, chunk, app),
-        _ => render_input(f, chunk, app)
+        InputMode::Type => render_input(f, chunk, app),
+        InputMode::Confirm => render_confirm(f, chunk, app)
     }
 }
 
@@ -303,6 +331,34 @@ fn render_select<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: & m
         .highlight_symbol(">> ");
 
     f.render_stateful_widget(items, chunk,  & mut app.state_ful_list.state);
+}
+
+fn render_confirm<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: & mut App) {
+    let block = Block::default().title("Confirm").borders(Borders::ALL);
+
+    f.render_widget(block, chunk);
+
+    let chunk = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([Constraint::Min(1)].as_ref())
+        .split(chunk);
+
+    let text = app.messages.join(" ");
+    let text1 = Text::from(vec![Spans::from(vec![
+        Span::raw("commit message: "),
+        Span::raw(text),
+    ])]);
+    let text2 = Text::from(vec![Spans::from(vec![
+        Span::raw("Press "),
+        Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" to quit, "),
+        Span::styled("Enter", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" to commit the message"),
+    ])]);
+    let commit_message = List::new(vec![ListItem::new(text2), ListItem::new(Span::raw("")), ListItem::new(text1)]);
+    f.render_widget(commit_message, chunk[0]);
+    
 }
 
 fn render_right_area<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: &App) {
