@@ -1,7 +1,7 @@
 {
-  "name": "rcz",
+  "name": "rcz-cli",
   "version": "1.0.0",
-  "description": "简单的git自定义提交工具，如commitizen",
+  "description": "简单的git自定义提交工具, 如commitizen",
   "main": "index.js",
   "directories": {
     "test": "tests"
