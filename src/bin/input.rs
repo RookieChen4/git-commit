@@ -271,7 +271,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, app: & mut App) {
 
         render_left_area(f, chunks[0], app);
 
-        render_right_area(f, chunks[1], app);
+        render_right_area(f, chunks[1]);
 }
 
 fn render_left_area<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: & mut App) {
@@ -361,7 +361,7 @@ fn render_confirm<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: & 
     
 }
 
-fn render_right_area<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect, app: &App) {
+fn render_right_area<B: Backend>(f: &mut Frame<B>, chunk:tui::layout::Rect) {
 
     let block = Block::default().title("git log").borders(Borders::ALL);
 
