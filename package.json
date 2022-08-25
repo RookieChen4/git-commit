@@ -1,0 +1,28 @@
+{
+  "name": "rcz",
+  "version": "1.0.0",
+  "description": "简单的git自定义提交工具，如commitizen",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "bin": {
+    "rcz": "bin/input.exe"
+  },
+  "files": [
+    "bin"
+  ],
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RookieChen4/git-commit.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/RookieChen4/git-commit/issues"
+  },
+  "homepage": "https://github.com/RookieChen4/git-commit#readme"
+}
